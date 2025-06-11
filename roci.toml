@@ -1,0 +1,5 @@
+cmd = ["ro"]
+
+[[entries]]
+source = "target/release/ro"
+target = "/usr/bin/ro"

@@ -1,0 +1,29 @@
+[package]
+name = "roci"
+version = "0.0.1"
+description = "Small OCI image builder"
+homepage = "https://github.com/tofay/roci"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+chrono = "0.4.41"
+clap = { version = "4.5.40", features = ["derive"], optional = true }
+env_logger = "0.11.8"
+indexmap = { version = "2.9.0", features = ["serde"] }
+lddtree = "0.3.7"
+log = "0.4.27"
+ocidir = "0.3.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tar = "0.4.44"
+thiserror = "2.0.12"
+toml = { version = "0.8.23", optional = true }
+xattr = "1.5.0"
+
+[features]
+default = ["cli"]
+cli = ["clap", "toml"]
+
+[dev-dependencies]
+test-temp-dir = "0.3.4"

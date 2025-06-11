@@ -1,9 +1,9 @@
 use indexmap::IndexMap;
 use ocidir::{
+    OciDir,
     cap_std::fs::Dir,
     new_empty_manifest,
     oci_spec::image::{Arch, ConfigBuilder, Descriptor, ImageConfigurationBuilder, MediaType, Os},
-    OciDir,
 };
 use serde::Deserialize;
 use std::{

@@ -11,7 +11,7 @@ use roci::{self, build_image, Entry, ImageConfiguration};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Output image path
+    /// Output OCI image directory path
     #[arg(value_name = "PATH")]
     path: std::path::PathBuf,
 

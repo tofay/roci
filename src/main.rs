@@ -1,17 +1,18 @@
 use std::io::Write;
 use std::time::Instant;
 
+use anyhow::{Context as _, Result};
 use chrono::Local;
 use clap::Parser;
 use env_logger::Builder;
 
-use roci::{self, build_image, Entry, ImageConfiguration};
+use roci::{self, Entry, ImageConfiguration, build_image, creation_time};
 
 /// Build a roci image
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Output image path
+    /// Output OCI image directory path
     #[arg(value_name = "PATH")]
     path: std::path::PathBuf,
 
@@ -37,18 +38,7 @@ struct ConfigFile {
     image: ImageConfiguration,
 }
 
-fn creation_time() -> chrono::DateTime<chrono::Utc> {
-    // Use the current time as the creation time, unless SOURCE_DATE_EPOCH is set
-    if let Ok(epoch) = std::env::var("SOURCE_DATE_EPOCH") {
-        if let Ok(epoch) = epoch.parse::<i64>() {
-            return chrono::DateTime::<chrono::Utc>::from_timestamp(epoch, 0)
-                .unwrap_or(chrono::Utc::now());
-        }
-    }
-    chrono::Utc::now()
-}
-
-fn main() {
+fn main() -> Result<()> {
     // setup env logger
     Builder::from_default_env()
         .format(|buf, record| {
@@ -64,19 +54,26 @@ fn main() {
     let args = Cli::parse();
 
     // parse config file
-    let contents = std::fs::read_to_string(&args.config_file).unwrap();
-    let config: ConfigFile = toml::from_str(&contents).unwrap();
+    let contents = std::fs::read_to_string(&args.config_file).context(format!(
+        "Failed to read config file: {}",
+        args.config_file.display()
+    ))?;
+    let config: ConfigFile = toml::from_str(&contents).context(format!(
+        "Failed to parse config file: {}",
+        args.config_file.display()
+    ))?;
 
     let now = Instant::now();
     let _descriptor = build_image(
         config.entries,
         config.image,
-        args.path,
+        &args.path,
         args.tag.as_deref(),
         creation_time(),
     )
-    .unwrap();
+    .context(format!("Failed to build image at: {}", args.path.display()))?;
 
     let elapsed = now.elapsed();
     eprintln!("Finished in: {:.2?}", elapsed);
+    Ok(())
 }

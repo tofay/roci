@@ -12,17 +12,20 @@
 ## Usage
 
 ```sh
-roci [OPTIONS] <PATH>
+$ roci --help
+Small OCI image builder
+
+Usage: roci [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  Output OCI image directory path
+
+Options:
+  -t, --tag <TAG>    Optional tag for the image
+  -f, --file <FILE>  Config file [default: roci.toml]
+  -h, --help         Print help
+  -V, --version      Print version
 ```
-
-- `<PATH>`: Output image directory (required)
-
-### Options
-
-- `-t, --tag <TAG>`: Optional tag for the image
-- `-f, --file <FILE>`: Path to config file (defaults to `roci.toml`)
-- `-h, --help`: Print help information
-- `-V, --version`: Print version information
 
 ### Example
 

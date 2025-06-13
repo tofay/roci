@@ -1,15 +1,16 @@
+use anyhow::{bail, Context, Result};
 use indexmap::IndexMap;
 use ocidir::{
-    OciDir,
     cap_std::fs::Dir,
     new_empty_manifest,
     oci_spec::image::{Arch, ConfigBuilder, Descriptor, ImageConfigurationBuilder, MediaType, Os},
+    OciDir,
 };
 use serde::Deserialize;
 use std::{
     collections::HashMap,
     fs,
-    io::{self, Write},
+    io::Write,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::Command,
@@ -19,22 +20,6 @@ use tar::{EntryType, Header};
 /// The path where relative libraries are stored in the image,
 /// if we can't determine the library path from `ld.so`.
 const LIBRARY_PATH: &str = "/lib";
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("io error")]
-    Io(#[from] io::Error),
-    #[error("OCI error")]
-    Oci(#[from] ocidir::Error),
-    #[error("OCI Spec error")]
-    OciSpec(#[from] ocidir::oci_spec::OciSpecError),
-    #[error("io error")]
-    DependencyResolution(#[from] lddtree::Error),
-    #[error("unknown data store error")]
-    Unknown,
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,9 +106,9 @@ fn system_search_path() -> Result<PathBuf> {
     let output = Command::new("ld.so")
         .arg("--help")
         .output()
-        .map_err(|_| Error::Unknown)?;
+        .context("failed to run ld.so --help")?;
     if !output.status.success() {
-        return Err(Error::Unknown);
+        bail!("ld.so --help failed with status: {}", output.status);
     }
     let output_str = String::from_utf8_lossy(&output.stdout);
     Ok(output_str
@@ -147,25 +132,28 @@ fn write_entries<'a>(
 
         for key in xattrs {
             let value = xattr::get(&entry.source, &key)?.unwrap_or_default();
-            // each entry is "<len> <key>=<value>\n": https://www.ibm.com/docs/en/zos/2.3.0?topic=SSLTBW_2.3.0/com.ibm.zos.v2r3.bpxa500/paxex.html
-            let data_len = PAX_SCHILY_XATTR.len() + key.as_bytes().len() + value.len() + 3;
-            let mut len_len = 1;
-            while data_len + len_len >= 10usize.pow(len_len.try_into().unwrap()) {
-                len_len += 1;
+
+            if !value.is_empty() {
+                // each entry is "<len> <key>=<value>\n": https://www.ibm.com/docs/en/zos/2.3.0?topic=SSLTBW_2.3.0/com.ibm.zos.v2r3.bpxa500/paxex.html
+                let data_len = PAX_SCHILY_XATTR.len() + key.as_bytes().len() + value.len() + 3;
+                let mut len_len = 1;
+                while data_len + len_len >= 10usize.pow(len_len.try_into()?) {
+                    len_len += 1;
+                }
+                pax_data.write_all((data_len + len_len).to_string().as_bytes())?;
+                pax_data.write_all(b" ")?;
+                pax_data.write_all(PAX_SCHILY_XATTR)?;
+                pax_data.write_all(key.as_bytes())?;
+                pax_data.write_all(b"=")?;
+                pax_data.write_all(&value)?;
+                pax_data.write_all(b"\n")?;
             }
-            pax_data.write_all((data_len + len_len).to_string().as_bytes())?;
-            pax_data.write_all(b" ")?;
-            pax_data.write_all(PAX_SCHILY_XATTR)?;
-            pax_data.write_all(key.as_bytes())?;
-            pax_data.write_all(b"=")?;
-            pax_data.write_all(&value)?;
-            pax_data.write_all(b"\n")?;
-        }
-        if !pax_data.is_empty() {
-            pax_header.set_size(pax_data.len() as u64);
-            pax_header.set_entry_type(tar::EntryType::XHeader);
-            pax_header.set_cksum();
-            builder.append(&pax_header, &*pax_data)?;
+            if !pax_data.is_empty() {
+                pax_header.set_size(pax_data.len() as u64);
+                pax_header.set_entry_type(tar::EntryType::XHeader);
+                pax_header.set_cksum();
+                builder.append(&pax_header, &*pax_data)?;
+            }
         }
 
         let mut header = Header::new_gnu();
@@ -354,10 +342,7 @@ pub fn build_image(
     if !path.exists() {
         fs::create_dir_all(path)?;
     } else if !path.is_dir() {
-        return Err(Error::Io(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("{} is not a directory", path.display()),
-        )));
+        bail!("The specified path {} is not a directory", path.display());
     }
     let dir = Dir::open_ambient_dir(path, ocidir::cap_std::ambient_authority())?;
     let oci_dir = OciDir::ensure(&dir)?;
@@ -391,4 +376,16 @@ pub fn build_image(
         tag,
         ocidir::oci_spec::image::Platform::default(),
     )?)
+}
+
+/// Get the creation time for the image.
+/// If the `SOURCE_DATE_EPOCH` environment variable is set, it will use that as the creation time.
+pub fn creation_time() -> chrono::DateTime<chrono::Utc> {
+    if let Ok(epoch) = std::env::var("SOURCE_DATE_EPOCH") {
+        if let Ok(epoch) = epoch.parse::<i64>() {
+            return chrono::DateTime::<chrono::Utc>::from_timestamp(epoch, 0)
+                .unwrap_or(chrono::Utc::now());
+        }
+    }
+    chrono::Utc::now()
 }

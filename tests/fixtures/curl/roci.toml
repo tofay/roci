@@ -5,6 +5,6 @@ source = "/usr/bin/curl"
 target = "/usr/bin/curl"
 
 [[entries]]
-source = "/etc/pki/tls/certs/ca-bundle.crt"
-target = "/etc/pki/tls/certs/ca-bundle.crt"
+source = "/etc/ssl/certs/ca-certificates.crt"
+target = "/etc/ssl/certs/ca-certificates.crt"
 mode = 0o644

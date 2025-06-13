@@ -6,7 +6,7 @@ use chrono::Local;
 use clap::Parser;
 use env_logger::Builder;
 
-use roci::{self, build_image, creation_time, Entry, ImageConfiguration};
+use roci::{self, Entry, ImageConfiguration, build_image, creation_time};
 
 /// Build a roci image
 #[derive(Parser, Debug)]

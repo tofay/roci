@@ -1,4 +1,4 @@
-//! Integration Tests for rpmoci
+//! Integration Tests for roci
 use std::{
     fs::{self},
     path::{Path, PathBuf},
@@ -30,24 +30,23 @@ fn setup_test(fixture: &str) -> (TestTempDir, PathBuf) {
     (out, path)
 }
 
-fn build_and_run(image: &str, should_succeed: bool) -> std::process::Output {
-    let (_tmp_dir, root) = setup_test(image);
-    let status = Command::new(EXE)
-        .arg("--tag=test")
-        .arg(image)
-        .env("RUST_LOG", "trace")
-        .current_dir(&root)
+fn build_and_run(image: &str, root: &Path, should_succeed: bool) -> std::process::Output {
+    build(image, root);
+    let status = Command::new("skopeo")
+        .arg("copy")
+        .arg(format!("oci:{image}:test"))
+        .arg(format!("docker-daemon:{image}:test"))
+        .current_dir(root)
         .status()
-        .expect("failed to run rpmoci");
+        .expect("failed to run skopeo");
     assert!(status.success());
-    copy_to_docker(image, &root);
     let output = Command::new("docker")
         .arg("run")
-        .arg(format!("{}:test", image))
+        .arg(format!("{image}:test"))
         .output()
         .expect("failed to run container");
     let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    eprintln!("stderr: {}", stderr);
+    eprintln!("stderr: {stderr}");
     if should_succeed {
         assert!(output.status.success());
     } else {
@@ -56,20 +55,97 @@ fn build_and_run(image: &str, should_succeed: bool) -> std::process::Output {
     output
 }
 
-fn copy_to_docker(image: &str, root: impl AsRef<Path>) {
-    let status = Command::new("skopeo")
-        .arg("copy")
-        .arg(format!("oci:{}:test", image))
-        .arg(format!("docker-daemon:{}:test", image))
-        .current_dir(root.as_ref())
+fn build(image: &str, root: &Path) {
+    let status = Command::new(EXE)
+        .arg("--tag=test")
+        .arg(image)
+        .env("RUST_LOG", "trace")
+        .current_dir(root)
         .status()
-        .expect("failed to run skopeo");
+        .expect("failed to run roci");
     assert!(status.success());
 }
 
 #[test]
-fn test_curl() {
+fn test_run() {
+    let image = "curl-ubuntu";
+    let (_tmp_dir, root) = setup_test(image);
     // curl test includes linux-vdso, which should be skipped
     // and a cert file that is not an ELF file
-    build_and_run("curl", true);
+    build_and_run(image, &root, true);
+}
+
+#[test]
+fn test_trivy() {
+    let image = "curl-ubuntu";
+    let (_tmp_dir, root) = setup_test(image);
+    build(image, &root);
+
+    // check trivy can scan the image. Get a json spdx and check for packages
+    let output = Command::new("trivy")
+        .arg("image")
+        .arg("--format=json")
+        .arg("--list-all-pkgs")
+        .arg("--input")
+        .arg(format!("./{image}"))
+        .current_dir(&root)
+        .output()
+        .expect("failed to run trivy");
+    assert!(
+        output.status.success(),
+        "trivy failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    // parse with serde_json
+    let trivy_output: serde_json::Value =
+        serde_json::from_str(stdout).expect("failed to parse json");
+
+    eprintln!("Trivy output: {trivy_output:?}");
+    let package_names = trivy_output
+        .get("Results")
+        .and_then(|results| results.as_array().and_then(|arr| arr.first()))
+        .expect("Results should be an array")
+        .get("Packages")
+        .and_then(|packages| packages.as_array())
+        .expect("Packages should be an array")
+        .iter()
+        .map(|pkg| {
+            pkg.get("Name")
+                .and_then(|name| name.as_str())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+    eprintln!("Packages: {package_names:?}");
+    // Check for a few specific packages
+    assert!(package_names.contains(&"curl"));
+    assert!(package_names.contains(&"libssl3t64"));
+    assert!(package_names.contains(&"libgnutls30t64"));
+}
+
+#[test]
+fn test_syft() {
+    let image = "curl-ubuntu";
+    let (_tmp_dir, root) = setup_test(image);
+    build(image, &root);
+
+    // check syft can scan the image
+    let output = Command::new("syft")
+        .arg("scan")
+        .arg(format!("oci-dir:{image}"))
+        .current_dir(&root)
+        .output()
+        .expect("failed to run trivy");
+    assert!(
+        output.status.success(),
+        "syft failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    eprintln!("syft stdout: {stdout}");
+    // Check for a few specific packages
+    assert!(stdout.contains("libcurl4t64"));
+    assert!(stdout.contains("libk5crypto3"));
 }

@@ -74,6 +74,6 @@ fn main() -> Result<()> {
     .context(format!("Failed to build image at: {}", args.path.display()))?;
 
     let elapsed = now.elapsed();
-    eprintln!("Finished in: {:.2?}", elapsed);
+    eprintln!("Finished in: {elapsed:.2?}");
     Ok(())
 }

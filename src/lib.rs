@@ -1,5 +1,7 @@
 use anyhow::{Context, Result, bail};
+use console::{Term, style};
 use indexmap::IndexMap;
+use indicatif::{ProgressBar, ProgressStyle};
 use ocidir::{
     OciDir,
     cap_std::fs::Dir,
@@ -223,8 +225,12 @@ pub fn build_image(
     path: impl AsRef<Path>,
     tag: Option<&str>,
     creation_time: chrono::DateTime<chrono::Utc>,
+    multi: Option<&indicatif::MultiProgress>,
 ) -> Result<Descriptor> {
-    eprintln!("Resolving files");
+    eprintln!(
+        "{:>10} files",
+        style("Resolving").for_stderr().bright().green()
+    );
     let resolved_entries = resolve_entries(&entries)?;
 
     log::debug!(
@@ -233,7 +239,10 @@ pub fn build_image(
         resolved_entries.len() - entries.len()
     );
 
-    eprintln!("Building image layer");
+    eprintln!(
+        "{:>10} image layer",
+        style("Writing").for_stderr().bright().green()
+    );
 
     // make sure the path exists
     let path = path.as_ref();
@@ -282,7 +291,7 @@ pub fn build_image(
 
     builder.add_file("/etc/os-release");
 
-    builder.build(&mut layer_builder)?;
+    builder.build(&mut layer_builder, multi)?;
     let layer = layer_builder.into_inner()?.complete()?;
 
     let mut config = config
@@ -300,7 +309,10 @@ pub fn build_image(
         "roci",
         creation_time,
     );
-    eprintln!("Writing image manifest");
+    eprintln!(
+        "{:>10} image manifest",
+        style("Writing").for_stderr().bright().green()
+    );
     Ok(oci_dir.insert_manifest_and_config(
         manifest,
         config,
@@ -492,11 +504,39 @@ impl<W: Write> Builder<W> {
 
     /// Actually build the tar archive with the collected files.
     /// This will ensure that directories are created before files are added,
-    fn build(self, tar_builder: &mut tar::Builder<W>) -> Result<()> {
+    fn build(
+        self,
+        tar_builder: &mut tar::Builder<W>,
+        multi: Option<&indicatif::MultiProgress>,
+    ) -> Result<()> {
         let mut dirs_added = HashSet::new();
+
+        let pb = ProgressBar::new(self.0.len() as u64)
+            .with_style(
+                ProgressStyle::with_template(
+                    // note that bar size is fixed unlike cargo which is dynamic
+                    // and also the truncation in cargo uses trailers (`...`)
+                    if Term::stdout().size().1 > 80 {
+                        "{prefix:>10.cyan.bold} [{bar:57}] {pos}/{len} {wide_msg}"
+                    } else {
+                        "{prefix:>10.cyan.bold} [{bar:57}] {pos}/{len}"
+                    },
+                )
+                .unwrap()
+                .progress_chars("=> "),
+            )
+            .with_prefix("Packaging");
+
+        let pb = if let Some(multi) = multi {
+            multi.add(pb)
+        } else {
+            pb
+        };
 
         for (path, func) in self.0 {
             log::debug!("Adding {}", path.display());
+            pb.set_message(format!("{}", path.display()));
+
             for ancestor in path
                 .ancestors()
                 .skip(1)
@@ -519,7 +559,10 @@ impl<W: Write> Builder<W> {
             }
 
             func(tar_builder)?;
+            pb.inc(1);
         }
+
+        pb.finish_and_clear();
         Ok(())
     }
 }

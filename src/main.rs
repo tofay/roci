@@ -4,8 +4,11 @@ use std::time::Instant;
 use anyhow::{Context as _, Result};
 use chrono::Local;
 use clap::Parser;
+use console::style;
 use env_logger::Builder;
 
+use indicatif::MultiProgress;
+use indicatif_log_bridge::LogWrapper;
 use roci::{self, Entry, ImageConfiguration, build_image, creation_time};
 
 /// Build a roci image
@@ -40,17 +43,19 @@ struct ConfigFile {
 
 fn main() -> Result<()> {
     // setup env logger
-    Builder::from_default_env()
+    let logger = Builder::from_default_env()
         .format(|buf, record| {
             writeln!(
                 buf,
                 "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                Local::now().to_rfc3339(),
                 record.level(),
                 record.args()
             )
         })
-        .init();
+        .build();
+    let multi = MultiProgress::new();
+    LogWrapper::new(multi.clone(), logger).try_init().unwrap();
     let args = Cli::parse();
 
     // parse config file
@@ -70,10 +75,14 @@ fn main() -> Result<()> {
         &args.path,
         args.tag.as_deref(),
         creation_time(),
+        Some(&multi),
     )
     .context(format!("Failed to build image at: {}", args.path.display()))?;
 
     let elapsed = now.elapsed();
-    eprintln!("Finished in: {elapsed:.2?}");
+    eprintln!(
+        "{:>10} in {elapsed:.2?}",
+        style("Finished").for_stderr().bright().green()
+    );
     Ok(())
 }

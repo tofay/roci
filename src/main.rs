@@ -9,9 +9,9 @@ use env_logger::Builder;
 
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use roci::{self, Entry, ImageConfiguration, build_image, creation_time};
+use roci::{Entry, ImageBuilder, ImageConfiguration};
 
-/// Build a roci image
+/// Small OCI image builder
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -86,17 +86,12 @@ fn main() -> Result<()> {
     ))?;
 
     let now = Instant::now();
-    let _descriptor = build_image(
-        config.entries,
-        config.image,
-        &args.path,
-        args.tag.as_deref(),
-        creation_time(),
-        args.label,
-        Some(&multi),
-    )
-    .context(format!("Failed to build image at: {}", args.path.display()))?;
-
+    let _descriptor = ImageBuilder::new(config.entries, config.image, &args.path)
+        .tag(args.tag.as_deref())
+        .multi(&multi)
+        .labels(args.label)
+        .build()
+        .context(format!("Failed to build image at: {}", args.path.display()))?;
     let elapsed = now.elapsed();
     eprintln!(
         "{:>10} in {elapsed:.2?}",

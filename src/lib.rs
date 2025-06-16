@@ -1,7 +1,6 @@
 #![deny(missing_docs)]
 
 //! Library for building OCI images from a set of entries and configuration.
-
 use anyhow::{Context, Result, bail};
 use console::{Term, style};
 use indexmap::IndexMap;
@@ -343,15 +342,7 @@ impl<'a> ImageBuilder<'a> {
             .any(|line| line.starts_with("ID_LIKE=") && line.contains("debian"));
 
         if is_debian_like {
-            builder.write_dpkg_status_files(&resolved_entries)?;
-
-            if Path::new("/etc/lsb-release").exists() {
-                builder.add_file("/etc/lsb-release");
-            }
-
-            if Path::new("/etc/debian_version").exists() {
-                builder.add_file("/etc/debian_version");
-            }
+            builder.add_dpkg_files(&resolved_entries)?;
         } else {
             builder.write_rpm_manifest(&resolved_entries)?;
         }
@@ -438,16 +429,15 @@ impl<W: Write> LayerBuilder<W> {
 
     /// Write dpkg status files for the given files,
     /// in `/var/lib/dpkg/status.d/` format as used by Google Distroless containers.
-    fn write_dpkg_status_files<'a>(
-        &mut self,
-        entries: impl IntoIterator<Item = &'a Entry>,
-    ) -> Result<()> {
+    fn add_dpkg_files<'a>(&mut self, entries: impl IntoIterator<Item = &'a Entry>) -> Result<()> {
         // Check if dpkg is available
         if Command::new("dpkg").arg("--version").output().is_err() {
             return Ok(());
         }
 
-        entries
+        let mut found_debian_package = false;
+
+        for package in entries
             .into_iter()
             .map(|entry| {
                 let output = Command::new("dpkg")
@@ -487,34 +477,46 @@ impl<W: Write> LayerBuilder<W> {
             .collect::<Result<HashSet<_>>>()?
             .into_iter()
             .flatten()
-            .try_for_each(|package| {
-                // use `dpkg -s <package>` to get package status, and write to `/var/lib/dpkg.status.d/<package>`
-                let output = Command::new("dpkg")
-                    .arg("-s")
-                    .arg(&package)
-                    .output()
-                    .context(format!("failed to run dpkg -s for package {package}"))?;
-                if !output.status.success() {
-                    bail!("dpkg -s failed for {}", package);
-                }
+        {
+            found_debian_package = true;
+            // use `dpkg -s <package>` to get package status, and write to `/var/lib/dpkg.status.d/<package>`
+            let output = Command::new("dpkg")
+                .arg("-s")
+                .arg(&package)
+                .output()
+                .context(format!("failed to run dpkg -s for package {package}"))?;
+            if !output.status.success() {
+                bail!("dpkg -s failed for {}", package);
+            }
 
-                self.0.insert(
-                    PathBuf::from(format!("./var/lib/dpkg/status.d/{package}")),
-                    Box::new(move |writer| {
-                        let mut header = Header::new_gnu();
-                        header.set_entry_type(EntryType::file());
-                        header.set_path(format!("./var/lib/dpkg/status.d/{package}"))?;
-                        header.set_size(output.stdout.len() as u64);
-                        header.set_mode(0o644);
-                        header.set_uid(0);
-                        header.set_gid(0);
-                        header.set_cksum();
-                        writer.append(&header, &*output.stdout)?;
-                        Ok(())
-                    }),
-                );
-                Ok(())
-            })
+            self.0.insert(
+                PathBuf::from(format!("./var/lib/dpkg/status.d/{package}")),
+                Box::new(move |writer| {
+                    let mut header = Header::new_gnu();
+                    header.set_entry_type(EntryType::file());
+                    header.set_path(format!("./var/lib/dpkg/status.d/{package}"))?;
+                    header.set_size(output.stdout.len() as u64);
+                    header.set_mode(0o644);
+                    header.set_uid(0);
+                    header.set_gid(0);
+                    header.set_cksum();
+                    writer.append(&header, &*output.stdout)?;
+                    Ok(())
+                }),
+            );
+        }
+
+        if found_debian_package {
+            if Path::new("/etc/lsb-release").exists() {
+                self.add_file("/etc/lsb-release");
+            }
+
+            if Path::new("/etc/debian_version").exists() {
+                self.add_file("/etc/debian_version");
+            }
+        }
+
+        Ok(())
     }
 
     /// Add an RPM manifest to the image.
@@ -544,7 +546,7 @@ impl<W: Write> LayerBuilder<W> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines = stdout
             .lines()
-            .filter(|line| !line.contains("no owning package"))
+            .filter(|line| !line.contains("not owned by"))
             .collect::<Vec<_>>();
 
         if !lines.is_empty() {

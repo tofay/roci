@@ -164,9 +164,19 @@ fn default_env() -> IndexMap<String, String> {
 impl ImageConfiguration {
     pub(crate) fn into_oci_config(
         self,
+        labels: Vec<(String, String)>,
         creation_time: chrono::DateTime<chrono::Utc>,
     ) -> Result<ocidir::oci_spec::image::ImageConfiguration> {
         let mut inner_builder = ConfigBuilder::default();
+
+        // Map the labels from the configuration and the additional labels
+        let mut labels_map = self.labels;
+        for (key, value) in labels {
+            labels_map.insert(key, value);
+        }
+        if !labels_map.is_empty() {
+            inner_builder = inner_builder.labels(labels_map);
+        }
 
         if let Some(user) = self.user {
             inner_builder = inner_builder.user(user);
@@ -191,9 +201,6 @@ impl ImageConfiguration {
         }
         if !self.volumes.is_empty() {
             inner_builder = inner_builder.volumes(self.volumes);
-        }
-        if !self.labels.is_empty() {
-            inner_builder = inner_builder.labels(self.labels);
         }
         if let Some(workingdir) = self.workingdir {
             inner_builder = inner_builder.working_dir(workingdir);
@@ -225,6 +232,7 @@ pub fn build_image(
     path: impl AsRef<Path>,
     tag: Option<&str>,
     creation_time: chrono::DateTime<chrono::Utc>,
+    labels: Vec<(String, String)>,
     multi: Option<&indicatif::MultiProgress>,
 ) -> Result<Descriptor> {
     eprintln!(
@@ -295,7 +303,7 @@ pub fn build_image(
     let layer = layer_builder.into_inner()?.complete()?;
 
     let mut config = config
-        .into_oci_config(creation_time)
+        .into_oci_config(labels, creation_time)
         .expect("failed to create OCI config");
     let mut manifest = new_empty_manifest()
         .media_type(MediaType::ImageManifest)

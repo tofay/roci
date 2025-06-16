@@ -21,10 +21,11 @@ Arguments:
   <PATH>  Output OCI image directory path
 
 Options:
-  -t, --tag <TAG>    Optional tag for the image
-  -f, --file <FILE>  Config file [default: roci.toml]
-  -h, --help         Print help
-  -V, --version      Print version
+  -t, --tag <TAG>      Optional tag for the image
+  -f, --file <FILE>    Config file [default: roci.toml]
+      --label <LABEL>  Labels to apply to the image, as KEY=VALUE strings
+  -h, --help           Print help
+  -V, --version        Print version
 ```
 
 ### Example

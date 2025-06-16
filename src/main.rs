@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Instant;
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use chrono::Local;
 use clap::Parser;
 use console::style;
@@ -31,6 +31,23 @@ struct Cli {
         default_value = "roci.toml"
     )]
     config_file: std::path::PathBuf,
+
+    /// Labels to apply to the image, as KEY=VALUE strings
+    #[clap(long = "label", value_parser = label_parser)]
+    label: Vec<(String, String)>,
+}
+
+fn label_parser(s: &str) -> Result<(String, String)> {
+    let mut parts = s.splitn(2, '=');
+    let key = parts
+        .next()
+        .ok_or_else(|| anyhow!(format!("Label `{}` missing key", s)))?
+        .to_string();
+    let value = parts
+        .next()
+        .ok_or_else(|| anyhow!(format!("Label `{}` missing value", s)))?
+        .to_string();
+    Ok((key, value))
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -75,6 +92,7 @@ fn main() -> Result<()> {
         &args.path,
         args.tag.as_deref(),
         creation_time(),
+        args.label,
         Some(&multi),
     )
     .context(format!("Failed to build image at: {}", args.path.display()))?;

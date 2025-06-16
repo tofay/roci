@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Instant;
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use chrono::Local;
 use clap::Parser;
 use console::style;
@@ -9,7 +9,7 @@ use env_logger::Builder;
 
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use roci::{self, build_image, creation_time, Entry, ImageConfiguration};
+use roci::{self, Entry, ImageConfiguration, build_image, creation_time};
 
 /// Build a roci image
 #[derive(Parser, Debug)]

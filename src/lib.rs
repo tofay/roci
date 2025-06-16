@@ -1,12 +1,12 @@
-use anyhow::{bail, Context, Result};
-use console::{style, Term};
+use anyhow::{Context, Result, bail};
+use console::{Term, style};
 use indexmap::IndexMap;
 use indicatif::{ProgressBar, ProgressStyle};
 use ocidir::{
+    OciDir,
     cap_std::fs::Dir,
     new_empty_manifest,
     oci_spec::image::{Arch, ConfigBuilder, Descriptor, ImageConfigurationBuilder, MediaType, Os},
-    OciDir,
 };
 use serde::Deserialize;
 use std::{

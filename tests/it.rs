@@ -7,7 +7,7 @@ use std::{
 
 use test_temp_dir::TestTempDir;
 
-// Path to ro binary under test
+// Path to binary under test
 const EXE: &str = env!("CARGO_BIN_EXE_gnoci");
 
 fn setup_test(fixture: &str) -> (TestTempDir, PathBuf) {

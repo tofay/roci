@@ -1,4 +1,4 @@
-//! Integration Tests for roci
+//! Integration Tests for gnoci
 use std::{
     fs::{self},
     path::{Path, PathBuf},
@@ -7,8 +7,8 @@ use std::{
 
 use test_temp_dir::TestTempDir;
 
-// Path to ro binary under test
-const EXE: &str = env!("CARGO_BIN_EXE_roci");
+// Path to binary under test
+const EXE: &str = env!("CARGO_BIN_EXE_gnoci");
 
 fn setup_test(fixture: &str) -> (TestTempDir, PathBuf) {
     // the test_temp_dir macro can't handle the integration test module path not containing ::,
@@ -21,8 +21,8 @@ fn setup_test(fixture: &str) -> (TestTempDir, PathBuf) {
         .join("tests/fixtures/")
         .join(fixture);
     fs::copy(
-        root.join("roci.toml"),
-        out.as_path_untracked().join("roci.toml"),
+        root.join("gnoci.toml"),
+        out.as_path_untracked().join("gnoci.toml"),
     )
     .unwrap();
 
@@ -62,7 +62,7 @@ fn build(image: &str, root: &Path) {
         .env("RUST_LOG", "trace")
         .current_dir(root)
         .status()
-        .expect("failed to run roci");
+        .expect("failed to run gnoci");
     assert!(status.success());
 }
 

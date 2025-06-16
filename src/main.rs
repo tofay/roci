@@ -7,9 +7,9 @@ use clap::Parser;
 use console::style;
 use env_logger::Builder;
 
+use gnoci::{Entry, ImageBuilder, ImageConfiguration};
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use roci::{Entry, ImageBuilder, ImageConfiguration};
 
 /// Small OCI image builder
 #[derive(Parser, Debug)]
@@ -28,7 +28,7 @@ struct Cli {
         short = 'f',
         long = "file",
         value_name = "FILE",
-        default_value = "roci.toml"
+        default_value = "gnoci.toml"
     )]
     config_file: std::path::PathBuf,
 

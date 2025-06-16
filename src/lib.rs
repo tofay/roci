@@ -224,109 +224,145 @@ impl ImageConfiguration {
     }
 }
 
-/// Build an OCI image from the given entries and configuration.
-/// The entries are resolved to include all dependencies, and the image is written to the specified path.
-pub fn build_image(
+/// Builder for constructing an OCI image.
+pub struct ImageBuilder<'a> {
     entries: Vec<Entry>,
     config: ImageConfiguration,
-    path: impl AsRef<Path>,
-    tag: Option<&str>,
-    creation_time: chrono::DateTime<chrono::Utc>,
+    path: PathBuf,
     labels: Vec<(String, String)>,
-    multi: Option<&indicatif::MultiProgress>,
-) -> Result<Descriptor> {
-    eprintln!(
-        "{:>10} files",
-        style("Resolving").for_stderr().bright().green()
-    );
-    let resolved_entries = resolve_entries(&entries)?;
+    tag: Option<&'a str>,
+    creation_time: Option<chrono::DateTime<chrono::Utc>>,
+    multi: Option<&'a indicatif::MultiProgress>,
+}
 
-    log::debug!(
-        "Resolved {} entries with {} dependencies",
-        entries.len(),
-        resolved_entries.len() - entries.len()
-    );
-
-    eprintln!(
-        "{:>10} image layer",
-        style("Writing").for_stderr().bright().green()
-    );
-
-    // make sure the path exists
-    let path = path.as_ref();
-    if !path.exists() {
-        fs::create_dir_all(path)?;
-    } else if !path.is_dir() {
-        bail!("The specified path {} is not a directory", path.display());
+impl<'a> ImageBuilder<'a> {
+    pub fn new(entries: Vec<Entry>, config: ImageConfiguration, path: impl AsRef<Path>) -> Self {
+        Self {
+            entries,
+            config,
+            path: path.as_ref().to_path_buf(),
+            tag: None,
+            creation_time: None,
+            multi: None,
+            labels: Vec::new(),
+        }
     }
-    let dir = Dir::open_ambient_dir(path, ocidir::cap_std::ambient_authority())?;
-    let oci_dir = OciDir::ensure(&dir)?;
 
-    let mut layer_builder = oci_dir.create_layer(None)?;
+    pub fn tag(mut self, tag: Option<&'a str>) -> Self {
+        self.tag = tag;
+        self
+    }
 
-    let mut builder = Builder::new();
-    for entry in &resolved_entries {
-        let entry = entry.clone();
-        builder.0.insert(
-            entry.relative_target_path(),
-            Box::new(move |writer| write_entry(writer, &entry)),
+    pub fn creation_time(mut self, creation_time: chrono::DateTime<chrono::Utc>) -> Self {
+        self.creation_time = Some(creation_time);
+        self
+    }
+
+    pub fn multi(mut self, multi: &'a indicatif::MultiProgress) -> Self {
+        self.multi = Some(multi);
+        self
+    }
+
+    pub fn labels(mut self, labels: Vec<(String, String)>) -> Self {
+        self.labels = labels;
+        self
+    }
+
+    pub fn build(self) -> Result<Descriptor> {
+        eprintln!(
+            "{:>10} files",
+            style("Resolving").for_stderr().bright().green()
         );
-    }
+        let resolved_entries = resolve_entries(&self.entries)?;
 
-    // Read /etc/os-release to detect package type.
-    // if ID_LIKE is debian in /etc/os-release, we should write a dpkg manifest
-    let os_release =
-        fs::read_to_string("/etc/os-release").context("failed to read /etc/os-release")?;
-    let is_debian_like = os_release
-        .lines()
-        .any(|line| line.starts_with("ID_LIKE=") && line.contains("debian"));
+        log::debug!(
+            "Resolved {} entries with {} dependencies",
+            self.entries.len(),
+            resolved_entries.len() - self.entries.len()
+        );
 
-    if is_debian_like {
-        builder.write_dpkg_status_files(&resolved_entries)?;
+        eprintln!(
+            "{:>10} image layer",
+            style("Writing").for_stderr().bright().green()
+        );
 
-        // if /etc/lsb-release exists, we should include this too as this is how trivy detects Ubuntu
-        if Path::new("/etc/lsb-release").exists() {
-            builder.add_file("/etc/lsb-release");
+        // make sure the path exists
+        let path = &self.path;
+        if !path.exists() {
+            fs::create_dir_all(path)?;
+        } else if !path.is_dir() {
+            bail!("The specified path {} is not a directory", path.display());
+        }
+        let dir = Dir::open_ambient_dir(path, ocidir::cap_std::ambient_authority())?;
+        let oci_dir = OciDir::ensure(&dir)?;
+
+        let mut layer_builder = oci_dir.create_layer(None)?;
+
+        let mut builder = LayerBuilder::new();
+        for entry in &resolved_entries {
+            let entry = entry.clone();
+            builder.0.insert(
+                entry.relative_target_path(),
+                Box::new(move |writer| write_entry(writer, &entry)),
+            );
         }
 
-        // If /etc/debian_version exists, we should include this too as this is how trivy detects Debian
-        if Path::new("/etc/debian_version").exists() {
-            builder.add_file("/etc/debian_version");
+        // Read /etc/os-release to detect package type.
+        // if ID_LIKE is debian in /etc/os-release, we should write a dpkg manifest
+        let os_release =
+            fs::read_to_string("/etc/os-release").context("failed to read /etc/os-release")?;
+        let is_debian_like = os_release
+            .lines()
+            .any(|line| line.starts_with("ID_LIKE=") && line.contains("debian"));
+
+        if is_debian_like {
+            builder.write_dpkg_status_files(&resolved_entries)?;
+
+            if Path::new("/etc/lsb-release").exists() {
+                builder.add_file("/etc/lsb-release");
+            }
+
+            if Path::new("/etc/debian_version").exists() {
+                builder.add_file("/etc/debian_version");
+            }
+        } else {
+            builder.write_rpm_manifest(&resolved_entries)?;
         }
-    } else {
-        builder.write_rpm_manifest(&resolved_entries)?;
+
+        builder.add_file("/etc/os-release");
+
+        builder.build(&mut layer_builder, self.multi)?;
+        let layer = layer_builder.into_inner()?.complete()?;
+
+        let creation_time = self.creation_time.unwrap_or_else(creation_time);
+
+        let mut config = self
+            .config
+            .into_oci_config(self.labels, creation_time)
+            .expect("failed to create OCI config");
+        let mut manifest = new_empty_manifest()
+            .media_type(MediaType::ImageManifest)
+            .build()?;
+
+        oci_dir.push_layer_full(
+            &mut manifest,
+            &mut config,
+            layer,
+            Option::<HashMap<String, String>>::None,
+            "roci",
+            creation_time,
+        );
+        eprintln!(
+            "{:>10} image manifest",
+            style("Writing").for_stderr().bright().green()
+        );
+        Ok(oci_dir.insert_manifest_and_config(
+            manifest,
+            config,
+            self.tag,
+            ocidir::oci_spec::image::Platform::default(),
+        )?)
     }
-
-    builder.add_file("/etc/os-release");
-
-    builder.build(&mut layer_builder, multi)?;
-    let layer = layer_builder.into_inner()?.complete()?;
-
-    let mut config = config
-        .into_oci_config(labels, creation_time)
-        .expect("failed to create OCI config");
-    let mut manifest = new_empty_manifest()
-        .media_type(MediaType::ImageManifest)
-        .build()?;
-
-    oci_dir.push_layer_full(
-        &mut manifest,
-        &mut config,
-        layer,
-        Option::<HashMap<String, String>>::None,
-        "roci",
-        creation_time,
-    );
-    eprintln!(
-        "{:>10} image manifest",
-        style("Writing").for_stderr().bright().green()
-    );
-    Ok(oci_dir.insert_manifest_and_config(
-        manifest,
-        config,
-        tag,
-        ocidir::oci_spec::image::Platform::default(),
-    )?)
 }
 
 /// Get the creation time for the image.
@@ -345,12 +381,11 @@ pub fn creation_time() -> chrono::DateTime<chrono::Utc> {
 type FileFn<W> = Box<dyn Fn(&mut tar::Builder<W>) -> Result<()>>;
 
 /// A builder for the image layer.
-/// A builder for the image layer.
 /// Used for collecting the files to be added to the image, and writing them
 /// to the tar archive in the correct order, with directories.
-struct Builder<W: Write>(BTreeMap<PathBuf, FileFn<W>>);
+struct LayerBuilder<W: Write>(BTreeMap<PathBuf, FileFn<W>>);
 
-impl<W: Write> Builder<W> {
+impl<W: Write> LayerBuilder<W> {
     fn new() -> Self {
         Self(BTreeMap::new())
     }

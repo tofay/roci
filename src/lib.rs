@@ -367,7 +367,7 @@ impl<'a> ImageBuilder<'a> {
             &mut config,
             layer,
             Option::<HashMap<String, String>>::None,
-            "roci",
+            "gnoci",
             creation_time,
         );
         eprintln!(

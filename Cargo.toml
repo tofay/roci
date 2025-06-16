@@ -1,8 +1,8 @@
 [package]
-name = "roci"
+name = "gnoci"
 version = "0.0.1"
 description = "Small OCI image builder"
-homepage = "https://github.com/tofay/roci"
+homepage = "https://github.com/tofay/gnoci"
 edition = "2024"
 license = "MIT"
 

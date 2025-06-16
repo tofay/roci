@@ -1,3 +1,7 @@
+#![deny(missing_docs)]
+
+//! Library for building OCI images from a set of entries and configuration.
+
 use anyhow::{Context, Result, bail};
 use console::{Term, style};
 use indexmap::IndexMap;
@@ -23,15 +27,21 @@ use tar::{EntryType, Header};
 /// if we can't determine the library path from `ld.so`.
 const LIBRARY_PATH: &str = "/lib";
 
+/// An entry representing a file to be included in the image.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Entry {
+    /// Source path on the host.
     pub source: PathBuf,
+    /// Target path inside the image.
     pub target: PathBuf,
+    /// Optional file mode.
     #[serde(default)]
     pub mode: Option<u32>,
+    /// Optional user ID.
     #[serde(default)]
     pub uid: Option<u64>,
+    /// Optional group ID.
     #[serde(default)]
     pub gid: Option<u64>,
 }
@@ -126,28 +136,38 @@ fn system_search_path() -> Result<PathBuf> {
         .unwrap_or(PathBuf::from(LIBRARY_PATH)))
 }
 
+/// Image configuration per <https://github.com/opencontainers/image-spec/blob/main/config.md#properties>
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-/// Image configuration per <https://github.com/opencontainers/image-spec/blob/main/config.md#properties>
 pub struct ImageConfiguration {
+    /// User to run as.
     #[serde(default)]
     pub user: Option<String>,
+    /// Ports to expose.
     #[serde(default)]
     pub exposed_ports: Vec<String>,
+    /// Environment variables.
     #[serde(default = "default_env")]
     pub env: IndexMap<String, String>,
+    /// Entrypoint command.
     #[serde(default)]
     pub entrypoint: Vec<String>,
+    /// Default command.
     #[serde(default)]
     pub cmd: Vec<String>,
+    /// Volumes to create.
     #[serde(default)]
     pub volumes: Vec<String>,
+    /// Image labels.
     #[serde(default)]
     pub labels: HashMap<String, String>,
+    /// Working directory.
     #[serde(default)]
     pub workingdir: Option<String>,
+    /// Stop signal.
     #[serde(default)]
     pub stopsignal: Option<String>,
+    /// Author of the image.
     #[serde(default)]
     pub author: Option<String>,
 }
@@ -162,6 +182,7 @@ fn default_env() -> IndexMap<String, String> {
 }
 
 impl ImageConfiguration {
+    /// Convert to OCI image configuration, merging additional labels.
     pub(crate) fn into_oci_config(
         self,
         labels: Vec<(String, String)>,
@@ -236,6 +257,7 @@ pub struct ImageBuilder<'a> {
 }
 
 impl<'a> ImageBuilder<'a> {
+    /// Create a new `ImageBuilder`.
     pub fn new(entries: Vec<Entry>, config: ImageConfiguration, path: impl AsRef<Path>) -> Self {
         Self {
             entries,
@@ -248,26 +270,31 @@ impl<'a> ImageBuilder<'a> {
         }
     }
 
+    /// Set the image tag.
     pub fn tag(mut self, tag: Option<&'a str>) -> Self {
         self.tag = tag;
         self
     }
 
+    /// Set the image creation time.
     pub fn creation_time(mut self, creation_time: chrono::DateTime<chrono::Utc>) -> Self {
         self.creation_time = Some(creation_time);
         self
     }
 
+    /// Set the progress multi-bar.
     pub fn multi(mut self, multi: &'a indicatif::MultiProgress) -> Self {
         self.multi = Some(multi);
         self
     }
 
+    /// Set additional image labels.
     pub fn labels(mut self, labels: Vec<(String, String)>) -> Self {
         self.labels = labels;
         self
     }
 
+    /// Build the OCI image and return its descriptor.
     pub fn build(self) -> Result<Descriptor> {
         eprintln!(
             "{:>10} files",

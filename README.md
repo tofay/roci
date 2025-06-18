@@ -1,3 +1,10 @@
+
+[![crates.io](https://img.shields.io/crates/v/gnoci?style=flat-square&logo=rust)](https://crates.io/crates/gnoci)
+[![Build Status](https://github.com/tofay/gnoci/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tofay/gnoci/actions/workflows/ci.yml?query=branch%3Amain)
+[![Documentation](https://docs.rs/gnoci/badge.svg)](https://docs.rs/gnoci/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Coverage Status (codecov.io)](https://codecov.io/gh/tofay/gnoci/branch/main/graph/badge.svg)](https://codecov.io/gh/tofay/gnoci/)
+
 # gnoci
 
 **gnoci** is a command-line tool for building OCI container images from a simple TOML configuration file.
@@ -7,7 +14,7 @@
 - Build OCI images using a simple, declarative config file
 - Fast and reproducible builds
 - Images contain just the specified files and their dynamic library dependencies
-- Automatic RPM manifest generation for Trivy/Syft integration (RPM-based distros only)
+- Automatic OS package manifest file generation for Trivy/Syft integration (RPM/debian -based distros only)
 
 ## Usage
 

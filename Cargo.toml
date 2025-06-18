@@ -2,7 +2,7 @@
 name = "gnoci"
 version = "0.0.1"
 description = "Small OCI image builder"
-homepage = "https://github.com/tofay/gnoci"
+repository = "https://github.com/tofay/gnoci"
 edition = "2024"
 license = "MIT"
 

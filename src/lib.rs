@@ -1,6 +1,10 @@
 #![deny(missing_docs)]
 
-//! Library for building OCI images from a set of entries and configuration.
+//! Small OCI image builder.
+//!
+//! Builds container images containing a given set of files, their dynamic
+//! library dependencies, and OS package files for scanning tools to detect
+//! the source of the files (RPM/deb based systems).
 use anyhow::{Context, Result, bail};
 use console::{Term, style};
 use indexmap::IndexMap;
@@ -20,7 +24,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use tar::{EntryType, Header};
+use tar::{EntryType, Header, HeaderMode};
 
 /// The path where relative libraries are stored in the image,
 /// if we can't determine the library path from `ld.so`.
@@ -323,6 +327,7 @@ impl<'a> ImageBuilder<'a> {
         let oci_dir = OciDir::ensure(&dir)?;
 
         let mut layer_builder = oci_dir.create_layer(None)?;
+        layer_builder.mode(HeaderMode::Deterministic);
 
         let mut builder = LayerBuilder::new();
         for entry in &resolved_entries {
